@@ -37,7 +37,7 @@ const ControlPanel = ({
         disabled={!selectedNode}
         style={{ backgroundColor: "#d32f2f" }}
       >
-        Delete Node
+        Delete Node Manuel
       </Button>
       <Button
         variant="contained"
