@@ -11,6 +11,8 @@ const ControlPanel = ({
   onUploadText,
   fileInputRef,
   selectedNode,
+  isLinkMode, // <-- NEW
+  setIsLinkMode, // <-- NEW
 }) => {
   return (
     <div
@@ -23,6 +25,7 @@ const ControlPanel = ({
       >
         Add Node
       </Button>
+
       <Button
         variant="contained"
         onClick={onEdit}
@@ -31,6 +34,7 @@ const ControlPanel = ({
       >
         Edit Node
       </Button>
+
       <Button
         variant="contained"
         onClick={onDelete}
@@ -39,6 +43,7 @@ const ControlPanel = ({
       >
         Delete Node Manuel
       </Button>
+
       <Button
         variant="contained"
         onClick={onCreateLink}
@@ -46,6 +51,19 @@ const ControlPanel = ({
       >
         Create Link
       </Button>
+
+      {/* NEW: Toggle for Pen/Link Mode */}
+      <Button
+        variant="contained"
+        onClick={() => setIsLinkMode((prev) => !prev)}
+        style={{
+          backgroundColor: isLinkMode ? "#616161" : "#9ccc65",
+          color: "#fff",
+        }}
+      >
+        {isLinkMode ? "Pen Mode: ON" : "Pen Mode: OFF"}
+      </Button>
+
       <Button
         variant="contained"
         onClick={onSave}
@@ -53,6 +71,7 @@ const ControlPanel = ({
       >
         Save Map
       </Button>
+
       <Button
         variant="contained"
         onClick={onLoad}
@@ -60,6 +79,7 @@ const ControlPanel = ({
       >
         Load Map
       </Button>
+
       <Button
         variant="contained"
         onClick={onUploadText}

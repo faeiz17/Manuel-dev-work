@@ -8,6 +8,7 @@ import ColorPickerDialog from "./ColorPickerDialog";
 import AddEditDialog from "./AddEditDialog";
 import ContextMenu from "./ContextMenu";
 import Tooltip from "./Tooltip";
+import InfoPage from "./InfoPage";
 
 const InteractiveNodeMap = () => {
   // Pastel color palette
@@ -32,7 +33,9 @@ const InteractiveNodeMap = () => {
     "#D8BFD8",
   ];
 
-  // State: nodes & links
+  // ----------------------
+  // Existing state
+  // ----------------------
   const [nodes, setNodes] = useState([
     {
       id: "Philosophy",
@@ -91,27 +94,27 @@ const InteractiveNodeMap = () => {
   // Interaction states
   const [selectedNode, setSelectedNode] = useState(null);
 
-  // For Add/Edit node
-  const [dialogAction, setDialogAction] = useState(""); // "add" | "edit" | "delete"
-  const [isAddEditOpen, setIsAddEditOpen] = useState(false); // specifically for AddEditDialog
+  // Add/Edit node
+  const [dialogAction, setDialogAction] = useState("");
+  const [isAddEditOpen, setIsAddEditOpen] = useState(false);
   const [newNodeId, setNewNodeId] = useState("");
 
-  // For InfoDialog
+  // InfoDialog
   const [isInfoDialogOpen, setIsInfoDialogOpen] = useState(false);
   const [nodeInfo, setNodeInfo] = useState("");
 
-  // For LinkDialog
+  // LinkDialog
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [linkSource, setLinkSource] = useState("");
   const [linkTarget, setLinkTarget] = useState("");
 
-  // For DeleteDialog
+  // DeleteDialog
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
-  // For color picker
+  // Color picker
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
 
-  // For tooltip
+  // Tooltip
   const [tooltip, setTooltip] = useState({
     visible: false,
     content: "",
@@ -119,7 +122,7 @@ const InteractiveNodeMap = () => {
     y: 0,
   });
 
-  // Context menu state
+  // Context menu
   const [contextMenu, setContextMenu] = useState({
     visible: false,
     x: 0,
@@ -127,10 +130,18 @@ const InteractiveNodeMap = () => {
     nodeId: null,
   });
 
+  // ----------------------
+  // NEW: Pen / Link Mode
+  // ----------------------
+  const [isLinkMode, setIsLinkMode] = useState(false);
+
+  // Temp link while dragging: { sourceId: string, x2: number, y2: number }
+  const [tempLink, setTempLink] = useState(null);
+
   // Refs
   const svgRef = useRef();
-  const fileInputRef = useRef(); // .json
-  const textFileInputRef = useRef(); // .txt
+  const fileInputRef = useRef();
+  const textFileInputRef = useRef();
   const isDragging = useRef(false);
   const draggedNodeId = useRef(null);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -139,7 +150,7 @@ const InteractiveNodeMap = () => {
   const clickTimeoutRef = useRef(null);
   const lastClickTimeRef = useRef(0);
 
-  // ====== Force simulation (with higher damping + lower repulsion) ======
+  // Force simulation
   const applyForces = useCallback(() => {
     setNodes((prevNodes) => {
       return prevNodes.map((node) => {
@@ -155,7 +166,6 @@ const InteractiveNodeMap = () => {
             const dy = node.y - otherNode.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             if (distance > 0 && distance < 200) {
-              // Less repulsion factor => 300 instead of 600
               const force = (1 / (distance * distance)) * 300;
               fx += dx * force;
               fy += dy * force;
@@ -174,7 +184,6 @@ const InteractiveNodeMap = () => {
               const dx = otherNode.x - node.x;
               const dy = otherNode.y - node.y;
               const distance = Math.sqrt(dx * dx + dy * dy);
-              // same multiplier => 0.0015
               fx += dx * distance * 0.0015;
               fy += dy * distance * 0.0015;
             }
@@ -185,7 +194,7 @@ const InteractiveNodeMap = () => {
         fx += (400 - node.x) * 0.005;
         fy += (300 - node.y) * 0.005;
 
-        // High damping => stops shaking faster
+        // Damping
         const vx = (node.vx + fx) * 0.9;
         const vy = (node.vy + fy) * 0.9;
         const x = Math.max(30, Math.min(770, node.x + vx));
@@ -210,6 +219,7 @@ const InteractiveNodeMap = () => {
   // ====== Mouse & Drag Handlers ======
   useEffect(() => {
     const handleMouseMove = (event) => {
+      // Normal drag for moving nodes
       if (isDragging.current && draggedNodeId.current) {
         const svgRect = svgRef.current.getBoundingClientRect();
         const newX = event.clientX - svgRect.left - dragOffset.current.x;
@@ -222,11 +232,56 @@ const InteractiveNodeMap = () => {
           )
         );
       }
+      // NEW for link dragging
+      else if (tempLink) {
+        const svgRect = svgRef.current.getBoundingClientRect();
+        const x2 = event.clientX - svgRect.left;
+        const y2 = event.clientY - svgRect.top;
+        setTempLink((prev) => ({ ...prev, x2, y2 }));
+      }
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (event) => {
+      // End normal drag
       isDragging.current = false;
       draggedNodeId.current = null;
+
+      // If in pen mode & we have a tempLink, see if we ended on a node
+      if (isLinkMode && tempLink) {
+        const svgRect = svgRef.current.getBoundingClientRect();
+        const mouseX = event.clientX - svgRect.left;
+        const mouseY = event.clientY - svgRect.top;
+
+        // Find if there's a node near the mouse
+        let targetNode = null;
+        const radius = 20; // radius tolerance for linking
+        for (const node of nodes) {
+          const dx = mouseX - node.x;
+          const dy = mouseY - node.y;
+          if (Math.sqrt(dx * dx + dy * dy) < radius) {
+            targetNode = node;
+            break;
+          }
+        }
+
+        // If we found a node, create the link
+        if (targetNode && targetNode.id !== tempLink.sourceId) {
+          const alreadyExists = links.some(
+            (l) =>
+              (l.source === tempLink.sourceId && l.target === targetNode.id) ||
+              (l.source === targetNode.id && l.target === tempLink.sourceId)
+          );
+          if (!alreadyExists) {
+            setLinks((prevLinks) => [
+              ...prevLinks,
+              { source: tempLink.sourceId, target: targetNode.id },
+            ]);
+          }
+        }
+
+        // Clear the temp link
+        setTempLink(null);
+      }
     };
 
     // Close context menu on global click
@@ -243,8 +298,9 @@ const InteractiveNodeMap = () => {
       document.removeEventListener("mouseup", handleMouseUp);
       document.removeEventListener("click", handleGlobalClick);
     };
-  }, []);
+  }, [tempLink, isLinkMode, links, nodes]);
 
+  // Double-click => open info
   const handleNodeDoubleClick = useCallback((node, event) => {
     event.stopPropagation();
     setSelectedNode(node);
@@ -252,6 +308,7 @@ const InteractiveNodeMap = () => {
     setIsInfoDialogOpen(true);
   }, []);
 
+  // Single-click => (or double-click detection logic)
   const handleNodeClick = useCallback(
     (node, event) => {
       event.stopPropagation();
@@ -271,37 +328,55 @@ const InteractiveNodeMap = () => {
     [handleNodeDoubleClick]
   );
 
-  const handleNodeMouseDown = useCallback((event, node) => {
-    event.stopPropagation();
-    // Right-click => context menu
-    if (event.button === 2) {
-      event.preventDefault();
-      setSelectedNode(node);
-      setContextMenu({
-        visible: true,
-        x: event.clientX,
-        y: event.clientY,
-        nodeId: node.id,
-      });
-      return;
-    }
-    // Left-click => drag
-    setSelectedNode(node);
-    draggedNodeId.current = node.id;
+  // Mouse down on a node
+  const handleNodeMouseDown = useCallback(
+    (event, node) => {
+      event.stopPropagation();
 
-    const svgRect = svgRef.current.getBoundingClientRect();
-    dragOffset.current = {
-      x: event.clientX - svgRect.left - node.x,
-      y: event.clientY - svgRect.top - node.y,
-    };
-
-    setTimeout(() => {
-      if (draggedNodeId.current === node.id) {
-        isDragging.current = true;
+      // 1) If we're in "pen mode", on left-click, start a temp link
+      if (isLinkMode && event.button === 0) {
+        setTempLink({
+          sourceId: node.id,
+          x2: node.x,
+          y2: node.y,
+        });
+        return;
       }
-    }, 100);
-  }, []);
 
+      // 2) If user right-clicked => context menu
+      if (event.button === 2) {
+        event.preventDefault();
+        setSelectedNode(node);
+        setContextMenu({
+          visible: true,
+          x: event.clientX,
+          y: event.clientY,
+          nodeId: node.id,
+        });
+        return;
+      }
+
+      // 3) Otherwise => normal drag with left button
+      if (event.button === 0) {
+        setSelectedNode(node);
+        draggedNodeId.current = node.id;
+        const svgRect = svgRef.current.getBoundingClientRect();
+        dragOffset.current = {
+          x: event.clientX - svgRect.left - node.x,
+          y: event.clientY - svgRect.top - node.y,
+        };
+
+        setTimeout(() => {
+          if (draggedNodeId.current === node.id) {
+            isDragging.current = true;
+          }
+        }, 100);
+      }
+    },
+    [isLinkMode]
+  );
+
+  // Hover => tooltip
   const handleNodeMouseEnter = useCallback((node) => {
     if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
     tooltipTimerRef.current = setTimeout(() => {
@@ -330,7 +405,6 @@ const InteractiveNodeMap = () => {
   const handleContextMenuAction = (action) => {
     if (!selectedNode) return;
     if (action === "edit") {
-      // Show info text edit
       setNodeInfo(selectedNode.info || "");
       setIsInfoDialogOpen(true);
       setContextMenu((prev) => ({ ...prev, visible: false }));
@@ -340,9 +414,11 @@ const InteractiveNodeMap = () => {
     }
   };
 
-  // ====== Add / Edit / Delete logic ======
+  // ----------------------
+  // Add / Edit / Delete
+  // ----------------------
   const openAddEditDialog = (action) => {
-    setDialogAction(action); // "add" or "edit"
+    setDialogAction(action);
     if (action === "edit" && selectedNode) {
       setNewNodeId(selectedNode.id);
     } else {
@@ -408,7 +484,7 @@ const InteractiveNodeMap = () => {
         )
       );
 
-      // Update links to reflect new ID
+      // Update links
       setLinks((prevLinks) =>
         prevLinks.map((link) => ({
           source: link.source === oldId ? newId : link.source,
@@ -420,7 +496,9 @@ const InteractiveNodeMap = () => {
     }
   };
 
-  // ====== Info saving ======
+  // ----------------------
+  // Info
+  // ----------------------
   const saveNodeInfo = () => {
     if (selectedNode) {
       setNodes((prevNodes) =>
@@ -432,7 +510,9 @@ const InteractiveNodeMap = () => {
     setIsInfoDialogOpen(false);
   };
 
-  // ====== Link creation ======
+  // ----------------------
+  // Link creation by Dialog
+  // ----------------------
   const openLinkDialog = () => {
     setLinkSource("");
     setLinkTarget("");
@@ -456,19 +536,23 @@ const InteractiveNodeMap = () => {
     setIsLinkDialogOpen(false);
   };
 
-  // ====== Color change ======
+  // ----------------------
+  // Color
+  // ----------------------
   const changeNodeColor = (color) => {
     if (selectedNode) {
       setNodes((prevNodes) =>
         prevNodes.map((node) =>
-          node.id === selectedNode.id ? { ...node, color: color } : node
+          node.id === selectedNode.id ? { ...node, color } : node
         )
       );
     }
     setIsColorPickerOpen(false);
   };
 
-  // ====== Save / Load map ======
+  // ----------------------
+  // Save / Load
+  // ----------------------
   const saveMap = () => {
     const data = {
       nodes: nodes.map(({ id, color, x, y, info }) => ({
@@ -515,7 +599,9 @@ const InteractiveNodeMap = () => {
     }
   };
 
-  // ====== Text file -> Node ======
+  // ----------------------
+  // Text file -> Node
+  // ----------------------
   const handleTextFileUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -539,7 +625,14 @@ const InteractiveNodeMap = () => {
   };
 
   return (
-    <div style={{ padding: 16 }}>
+    <div
+      style={{
+        padding: 16,
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       <ControlPanel
         onAdd={() => openAddEditDialog("add")}
         onEdit={() => openAddEditDialog("edit")}
@@ -550,26 +643,73 @@ const InteractiveNodeMap = () => {
         onUploadText={() => textFileInputRef.current.click()}
         fileInputRef={fileInputRef}
         selectedNode={selectedNode}
+        isLinkMode={isLinkMode}
+        setIsLinkMode={setIsLinkMode}
       />
-      <div
-        style={{
-          position: "relative",
-          border: "2px solid #ccc",
-          borderRadius: 8,
-          overflow: "hidden",
-        }}
-      >
-        <MapCanvas
-          nodes={nodes}
-          links={links}
-          svgRef={svgRef}
-          onNodeClick={handleNodeClick}
-          onNodeMouseDown={handleNodeMouseDown}
-          onNodeMouseEnter={handleNodeMouseEnter}
-          onNodeMouseLeave={handleNodeMouseLeave}
-          onContextMenu={handleContextMenu}
-        />
-        {tooltip.visible && <Tooltip tooltip={tooltip} />}
+      <div style={{ flex: 1, display: "flex", gap: 16 }}>
+        <div
+          style={{
+            flexGrow: 1,
+            position: "relative",
+            border: "2px solid #ccc",
+            borderRadius: 8,
+            overflow: "hidden",
+          }}
+        >
+          <MapCanvas
+            nodes={nodes}
+            links={links}
+            svgRef={svgRef}
+            onNodeClick={handleNodeClick}
+            onNodeMouseDown={handleNodeMouseDown}
+            onNodeMouseEnter={handleNodeMouseEnter}
+            onNodeMouseLeave={handleNodeMouseLeave}
+            onContextMenu={handleContextMenu}
+          />
+          {tooltip.visible && <Tooltip tooltip={tooltip} />}
+          {tempLink && (
+            <svg
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                pointerEvents: "none",
+                width: "100%",
+                height: "100%",
+              }}
+            >
+              {(() => {
+                const sourceNode = nodes.find(
+                  (n) => n.id === tempLink.sourceId
+                );
+                if (!sourceNode) return null;
+                return (
+                  <line
+                    x1={sourceNode.x}
+                    y1={sourceNode.y}
+                    x2={tempLink.x2}
+                    y2={tempLink.y2}
+                    stroke="black"
+                    strokeWidth="2"
+                  />
+                );
+              })()}
+            </svg>
+          )}
+        </div>
+        <div style={{ width: 300, borderLeft: "1px solid #ccc" }}>
+          {selectedNode ? (
+            <InfoPage
+              nodeInfo={nodeInfo}
+              setNodeInfo={setNodeInfo}
+              onSave={saveNodeInfo}
+              onCancel={() => {}}
+              selectedNode={selectedNode}
+            />
+          ) : (
+            <div style={{ padding: 16 }}>Select a node to see its info</div>
+          )}
+        </div>
       </div>
 
       {/* Context Menu */}
@@ -580,16 +720,6 @@ const InteractiveNodeMap = () => {
         onClose={() => setContextMenu((prev) => ({ ...prev, visible: false }))}
         onEdit={() => handleContextMenuAction("edit")}
         onChangeColor={() => handleContextMenuAction("changeColor")}
-      />
-
-      {/* Info Dialog */}
-      <InfoDialog
-        open={isInfoDialogOpen}
-        onClose={() => setIsInfoDialogOpen(false)}
-        nodeInfo={nodeInfo}
-        setNodeInfo={setNodeInfo}
-        onSave={saveNodeInfo}
-        selectedNode={selectedNode}
       />
 
       {/* Link Dialog */}
@@ -621,7 +751,7 @@ const InteractiveNodeMap = () => {
         selectedNode={selectedNode}
       />
 
-      {/* Add/Edit Dialog (NEW) */}
+      {/* Add/Edit Dialog */}
       <AddEditDialog
         open={
           isAddEditOpen && (dialogAction === "add" || dialogAction === "edit")
